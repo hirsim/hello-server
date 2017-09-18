@@ -1,12 +1,16 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"html/template"
 	"log"
 	"net/http"
 	"os"
+	"os/signal"
+	"strconv"
+	"syscall"
 	"time"
 )
 
@@ -21,7 +25,8 @@ const (
 )
 
 var (
-	printText = "Hello World!"
+	printText       = "Hello World!"
+	shutdownTimeout = 30
 
 	tpl *template.Template
 )
@@ -134,6 +139,13 @@ func main() {
 	if txt := os.Getenv("PRINT_TEXT"); txt != "" {
 		printText = txt
 	}
+	if st := os.Getenv("SHUTDOWN_TIMEOUT"); st != "" {
+		var err error
+		if shutdownTimeout, err = strconv.Atoi(st); err != nil {
+			log.Println("value in SHUTDOWN_TIMEOUT is invalid")
+			os.Exit(1)
+		}
+	}
 
 	html := `<!DOCTYPE html>
 <html lang="ja">
@@ -151,17 +163,78 @@ func main() {
 
 	var err error
 	if tpl, err = template.New("response").Parse(html); err != nil {
-		log.Fatalln(err)
+		log.Println(err)
+		os.Exit(1)
 	}
 
-	http.HandleFunc(rootPath, router)
-	http.HandleFunc(helloStringPath, router)
-	http.HandleFunc(helloHTMLPath, router)
-	http.HandleFunc(helloJSONPath, router)
-	http.HandleFunc(slothHelloStringPath, router)
-	http.HandleFunc(slothHelloHTMLPath, router)
-	http.HandleFunc(slothHelloJSONPath, router)
+	os.Exit(run())
+}
 
-	log.Println("start hello server.")
-	http.ListenAndServe(":8080", nil)
+func run() int {
+	mux := http.NewServeMux()
+
+	mux.HandleFunc(rootPath, router)
+	mux.HandleFunc(helloStringPath, router)
+	mux.HandleFunc(helloHTMLPath, router)
+	mux.HandleFunc(helloJSONPath, router)
+	mux.HandleFunc(slothHelloStringPath, router)
+	mux.HandleFunc(slothHelloHTMLPath, router)
+	mux.HandleFunc(slothHelloJSONPath, router)
+
+	srv := &http.Server{
+		Addr:    ":8080",
+		Handler: mux,
+	}
+
+	cerr := make(chan error, 1)
+
+	go func() {
+		cerr <- srv.ListenAndServe()
+	}()
+
+	log.Println("running hello server.")
+
+	select {
+	case err := <-cerr:
+		if err != nil && err != http.ErrServerClosed {
+			log.Println(err)
+			return 1
+		}
+		return 0
+	case <-waitSginal():
+	}
+
+	log.Println("stopping hello server.")
+	defer log.Println("stopped hello server.")
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second*time.Duration(shutdownTimeout))
+	defer cancel()
+
+	if err := srv.Shutdown(ctx); err != nil {
+		srv.Close()
+		log.Println(err)
+		return 1
+	}
+
+	return 0
+}
+
+func waitSginal() <-chan struct{} {
+	ret := make(chan struct{}, 1)
+
+	quit := make(chan os.Signal, 1)
+	sigs := []os.Signal{
+		syscall.SIGHUP,
+		syscall.SIGINT,
+		syscall.SIGTERM,
+		syscall.SIGQUIT,
+	}
+	signal.Notify(quit, sigs...)
+
+	go func() {
+		<-quit
+		ret <- struct{}{}
+	}()
+
+	return ret
 }

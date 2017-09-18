@@ -1,5 +1,6 @@
 # Hello Server
-ただ`Hello World!`を返すWebサーバです。
+ただ`Hello World!`を返すWebサーバです。  
+graceful shutdown に対応しています。
 
 ## エンドポイント
 
@@ -28,13 +29,19 @@ curl http://localhost:8080/hello
 Hello World!
 ```
 
-環境変数 PRINT_TEXT に文字列を設定すると、その文字列を表示します。
+## 環境変数
+
+環境変数`PRINT_TEXT`に文字列を設定すると、その文字列を表示します。
 
 ```
 docker run -d -e PRINT_TEXT="HELLO WORLD!" -p 8080:8080 hello-server:latest
 curl http://localhost:8080/hello
 HELLO WORLD!
 ```
+
+環境変数`SHUTDOWN_TIMEOUT`はサーバシャットダウンのタイムアウトを設定できます。  
+単位は 秒 です。  
+デフォルトは 30秒 です。
 
 ## ライセンス
 
