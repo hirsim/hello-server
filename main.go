@@ -189,21 +189,18 @@ func run() int {
 	cerr := make(chan error, 1)
 
 	go func() {
-		err := srv.ListenAndServe()
-		if err == http.ErrServerClosed {
-			err = nil
-		}
-		cerr <- err
+		cerr <- srv.ListenAndServe()
 	}()
 
 	log.Println("running hello server.")
 
 	select {
 	case err := <-cerr:
-		if err != nil {
+		if err != nil && err != http.ErrServerClosed {
 			log.Println(err)
 			return 1
 		}
+		return 0
 	case <-waitSginal():
 	}
 
@@ -223,7 +220,7 @@ func run() int {
 }
 
 func waitSginal() <-chan struct{} {
-	ret := make(chan struct{}, 0)
+	ret := make(chan struct{}, 1)
 
 	quit := make(chan os.Signal, 1)
 	sigs := []os.Signal{
@@ -234,8 +231,10 @@ func waitSginal() <-chan struct{} {
 	}
 	signal.Notify(quit, sigs...)
 
-	<-quit
-	close(ret)
+	go func() {
+		<-quit
+		ret <- struct{}{}
+	}()
 
 	return ret
 }
